@@ -128,7 +128,7 @@ The environment simulates a buffalo moving from a national park toward farmland 
 | REINFORCE | Run 10 | 15.90 |
 | A2C | Run 2 | 44.55 |
 | PPO | Run 4 | **50.30** |
-| DQN | see dqn_results.csv |  |
+| DQN | see dqn_results.csv |  38.85 |
 
 PPO performed best. It learned a clear escalation policy: stay quiet when the buffalo is far, activate the deterrent as it approaches, send SMS to farmers at the boundary.
 

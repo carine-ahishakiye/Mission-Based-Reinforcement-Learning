@@ -86,25 +86,25 @@ python main.py --api
 
 ---
 
-## Environment — WildlifeConflict-v0
+## Environment  WildlifeConflict-v0
 
 The environment simulates a buffalo moving from a national park toward farmland across three zones. Each step represents 30 minutes of real time.
 
-**Observation space — 9 continuous features**
+**Observation space  9 continuous features**
 
 | Feature | Description |
 |---|---|
 | step_length | Distance moved between consecutive positions (metres) |
 | speed | Movement speed (m/s) |
-| turning_angle | Direction change in degrees — decreases as animal heads toward farmland |
+| turning_angle | Direction change in degrees  decreases as animal heads toward farmland |
 | distance_to_farmland | Main risk indicator (metres) |
-| ndvi | Vegetation index — lower values mean food is scarce inside the park |
-| time_of_day | Hour of day — buffalo move more at night |
+| ndvi | Vegetation index lower values mean food is scarce inside the park |
+| time_of_day | Hour of day  buffalo move more at night |
 | season | 0 = wet season, 1 = dry season |
 | distance_to_water | Water availability drives movement decisions |
 | conflict_history | Number of conflicts that occurred so far this episode |
 
-**Action space — 6 discrete actions**
+**Action space  6 discrete actions**
 
 | Action | When it earns a positive reward |
 |---|---|
@@ -115,9 +115,9 @@ The environment simulates a buffalo moving from a national park toward farmland 
 | SEND SMS TO FARMERS | Buffalo at or within 200m of farmland |
 | ACTIVATE DETERRENT | Buffalo approaching or imminent |
 
-**Reward** — shaped by distance zone and action choice. Correct actions earn +1 to +10. Wrong actions earn -1 to -8. The worst penalty is -8 for issuing no alert when the buffalo is already at the boundary.
+**Reward** shaped by distance zone and action choice. Correct actions earn +1 to +10. Wrong actions earn -1 to -8. The worst penalty is -8 for issuing no alert when the buffalo is already at the boundary.
 
-**Terminal conditions** — an episode ends when the buffalo reaches the farmland boundary (distance ≤ 200m), retreats beyond 9000m, or after 200 steps.
+**Terminal conditions**  an episode ends when the buffalo reaches the farmland boundary (distance ≤ 200m), retreats beyond 9000m, or after 200 steps.
 
 ---
 
@@ -128,7 +128,7 @@ The environment simulates a buffalo moving from a national park toward farmland 
 | REINFORCE | Run 10 | 15.90 |
 | A2C | Run 2 | 44.55 |
 | PPO | Run 4 | **50.30** |
-| DQN | see dqn_results.csv | — |
+| DQN | see dqn_results.csv |  |
 
 PPO performed best. It learned a clear escalation policy: stay quiet when the buffalo is far, activate the deterrent as it approaches, send SMS to farmers at the boundary.
 

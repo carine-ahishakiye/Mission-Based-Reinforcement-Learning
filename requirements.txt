@@ -1,0 +1,6 @@
+gymnasium==0.29.1
+numpy==1.26.4
+pygame==2.5.2
+stable-baselines3==2.3.0
+matplotlib==3.8.2
+seaborn==0.13.2

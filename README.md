@@ -1,27 +1,29 @@
-# Mission-Based Reinforcement Learning
-### ULINZI Wildlife Conflict Early Warning
+# ULINZI Wildlife Conflict Early Warning System
 
-Ulinzi means *protection* in Swahili. This project applies reinforcement learning to a real problem I am researching for my capstone: predicting when a buffalo is about to leave a national park and raid nearby farmland, and issuing the right alert to farming communities before it happens.
+*Ulinzi* means **protection** in Swahili.
 
-The agent learns from a simulated environment built around actual buffalo movement patterns near Volcanoes National Park in Rwanda's Musanze District. Four RL algorithms are trained and compared on the same environment.
+This project trains a reinforcement learning agent to send the right wildlife conflict alert before a cape buffalo leaves a national park and enters farmland. The problem comes from my pre-capstone research on human-wildlife conflict near Volcanoes National Park in Rwanda's Musanze District, where buffalo regularly destroy crops and hurt farmers in the Kinigi sector. GPS collar data shows that buffalo move differently hours before crossing a park boundary, but no system in Africa currently uses that signal to warn communities in time.
+
+The agent observes nine features about the animal's movement and surroundings every 30 minutes, then picks one of six alert actions to send. Four algorithms were trained and compared on the same environment: DQN, REINFORCE, PPO, and A2C.
 
 ---
 
-## Repository structure
+## Project structure
 
 ```
 Mission-Based-Reinforcement-Learning/
 ├── environment/
 │   ├── __init__.py
-│   ├── custom_env.py     
-│   └── rendering.py      
+│   ├── custom_env.py       — WildlifeConflict-v0 custom Gymnasium environment
+│   └── rendering.py        — Pygame visualisation with three zones, buffalo, action banner
 ├── training/
-│   ├── dqn_training.py     
-│   └── pg_training.py     
+│   ├── dqn_training.py     — DQN training with 10 hyperparameter runs
+│   └── pg_training.py      — REINFORCE, PPO, and A2C with 10 runs each
 ├── models/
 │   ├── dqn/                — saved DQN models, results CSV, plots
 │   └── pg/                 — saved PPO and A2C models, results, plots
-├── main.py                 — entry point to run the best trained agent
+├── main.py                 
+├── random_demo.py          — show the environment with random actions, no model
 ├── requirements.txt
 └── README.md
 ```
@@ -35,89 +37,98 @@ git clone https://github.com/carine-ahishakiye/Mission-Based-Reinforcement-Learn
 cd Mission-Based-Reinforcement-Learning
 
 python -m venv venv
-venv\Scripts\activate    for window
-# source venv/bin/activate   for Linux or Mac
+venv\Scripts\activate       
+# source venv/bin/activate 
 
 pip install -r requirements.txt
 ```
 
 ---
 
-## Training
+## How to run
 
-Train DQN (10 hyperparameter configurations):
+**Random action demo no model required:**
+```bash
+python random_demo.py
+```
+Opens the pygame window and runs 3 episodes with random actions. Shows the environment components working without any training.
 
+**Train DQN (10 hyperparameter runs):**
 ```bash
 python -m training.dqn_training
 ```
 
-Train REINFORCE, PPO and A2C (10 configurations each):
-
+**Train REINFORCE, PPO, and A2C (10 runs each):**
 ```bash
 python -m training.pg_training
 ```
 
-Each script saves every model to `models/dqn/` or `models/pg/`, writes a results CSV with all 10 runs, and generates reward curves, entropy curves and a convergence plot automatically.
+Both scripts save every model, export results to CSV, and generate reward curves, entropy curves, and convergence plots automatically in `models/dqn/plots/` and `models/pg/plots/`.
 
----
-
-## Running the simulation
-
+**Run the best trained agent:**
 ```bash
 python main.py
 ```
 
-This reads the summary JSON files from both `models/dqn/results/` and `models/pg/results/`, picks the algorithm with the highest mean evaluation reward, loads that model, opens a pygame window, and runs 3 episodes with full terminal output at each step.
+Reads the summary JSON files from both results folders, picks the algorithm with the highest mean evaluation reward, loads that model, and runs 3 episodes with the pygame window and full terminal output per step.
 
-To run a specific algorithm:
-
+Run a specific algorithm:
 ```bash
 python main.py --algo ppo
-python main.py --algo dqn
+python main.py --algo dqn --episodes 5
 python main.py --algo a2c
-python main.py --algo ppo --episodes 5
 ```
 
-To also start a local JSON API at `http://localhost:5000/predict` that a web or mobile frontend can poll for live alert data:
-
+Start the JSON API alongside the simulation so any web or mobile frontend can poll live alert data:
 ```bash
 python main.py --api
 ```
+Each step is serialized to JSON at `http://localhost:5000/predict`.
 
 ---
 
-## Environment  WildlifeConflict-v0
+## Environment: WildlifeConflict-v0
 
-The environment simulates a buffalo moving from a national park toward farmland across three zones. Each step represents 30 minutes of real time.
+The environment simulates a buffalo moving from a national park toward farmland across three zones. Each step represents 30 minutes of simulated time.
 
 **Observation space  9 continuous features**
 
-| Feature | Description |
+| Feature | Range | Description |
+|---|---|---|
+| step_length | 0 to 5000m | Distance moved between GPS readings |
+| speed | 0 to 10 m/s | Movement speed |
+| turning_angle | 0 to 180 degrees | Lower values mean heading straight toward farmland |
+| distance_to_farmland | 0 to 10000m | Main conflict risk signal |
+| ndvi | -1 to 1 | Vegetation quality lower means food is scarce |
+| time_of_day | 0 to 23 | Buffalo move more at night |
+| season | 0 or 1 | Dry season means faster and further movement |
+| distance_to_water | 0 to 10000m | Water scarcity drives movement |
+| conflict_history | 0 to 10 | Cumulative conflicts this episode |
+
+**Action space 6 discrete actions**
+
+| Action | When it earns positive reward |
 |---|---|
-| step_length | Distance moved between consecutive positions (metres) |
-| speed | Movement speed (m/s) |
-| turning_angle | Direction change in degrees  decreases as animal heads toward farmland |
-| distance_to_farmland | Main risk indicator (metres) |
-| ndvi | Vegetation index lower values mean food is scarce inside the park |
-| time_of_day | Hour of day  buffalo move more at night |
-| season | 0 = wet season, 1 = dry season |
-| distance_to_water | Water availability drives movement decisions |
-| conflict_history | Number of conflicts that occurred so far this episode |
+| 0 - NO ALERT | Buffalo is far, beyond 3000m |
+| 1 - LOW ALERT | Buffalo entering approach zone, 1000 to 3000m |
+| 2 - HIGH ALERT | Buffalo imminent, under 1000m |
+| 3 - DEPLOY RANGER | Conflict imminent or at boundary |
+| 4 - SEND SMS TO FARMERS | Buffalo at or within 200m of farmland |
+| 5 - ACTIVATE DETERRENT | Approach or imminent zone |
 
-**Action space  6 discrete actions**
+**Reward structure**
 
-| Action | When it earns a positive reward |
-|---|---|
-| NO ALERT | Buffalo is far from farmland, beyond 3000m |
-| LOW ALERT | Buffalo entering the approach zone, 1000–3000m |
-| HIGH ALERT | Buffalo is imminent, under 1000m |
-| DEPLOY RANGER | Buffalo imminent or at the boundary |
-| SEND SMS TO FARMERS | Buffalo at or within 200m of farmland |
-| ACTIVATE DETERRENT | Buffalo approaching or imminent |
+| Zone | Best action | Reward |
+|---|---|---|
+| Far (beyond 3000m) | NO ALERT | +1 |
+| Approach (1000 to 3000m) | ACTIVATE DETERRENT | +4 |
+| Imminent (under 1000m) | HIGH ALERT / DEPLOY / SMS | +7 |
+| Boundary (under 200m) | HIGH ALERT / DEPLOY / SMS | +10 |
+| Boundary with NO ALERT | NO ALERT | -8 |
 
-**Reward** shaped by distance zone and action choice. Correct actions earn +1 to +10. Wrong actions earn -1 to -8. The worst penalty is -8 for issuing no alert when the buffalo is already at the boundary.
+**Terminal conditions**
 
-**Terminal conditions**  an episode ends when the buffalo reaches the farmland boundary (distance ≤ 200m), retreats beyond 9000m, or after 200 steps.
+An episode ends when the buffalo reaches farmland (conflict, distance 200m or less), retreats beyond 9000m, or after 200 steps maximum.
 
 ---
 
@@ -126,11 +137,40 @@ The environment simulates a buffalo moving from a national park toward farmland 
 | Algorithm | Best run | Mean eval reward |
 |---|---|---|
 | REINFORCE | Run 10 | 15.90 |
+| DQN | Run 7 | 38.85 |
 | A2C | Run 2 | 44.55 |
 | PPO | Run 4 | **50.30** |
-| DQN | see dqn_results.csv |  38.85 |
 
-PPO performed best. It learned a clear escalation policy: stay quiet when the buffalo is far, activate the deterrent as it approaches, send SMS to farmers at the boundary.
+PPO performed best. It learned a clear escalation policy: stay quiet when the buffalo is far, activate the deterrent as it approaches, send SMS to farmers at the boundary. A2C was the most consistent across hyperparameter configurations. REINFORCE struggled with high variance and most runs finished negative.
+
+---
+
+## JSON API
+
+Running `python main.py --api` starts a lightweight HTTP server. Each simulation step is available at:
+
+```
+GET http://localhost:5000/predict
+```
+
+Example response:
+```json
+{
+  "step": 12,
+  "action": 5,
+  "action_name": "ACTIVATE DETERRENT",
+  "reward": 5.0,
+  "distance_to_farm": 1463.9,
+  "speed_ms": 1.84,
+  "season": "dry",
+  "is_night": true,
+  "conflict_now": false,
+  "conflict_imminent": false,
+  "conflict_history": 0
+}
+```
+
+Any web or mobile frontend can poll this endpoint to display real-time conflict alerts.
 
 ---
 

@@ -1,567 +1,397 @@
-import sys
-import math
-import random
 import pygame
+import pygame.gfxdraw
+import numpy as np
+import math
+import sys
+from typing import Optional, Dict, Any, List
 
-SKY_TOP      = (120, 185, 240)
-SKY_BOT      = (200, 230, 255)
-PARK_DARK    = (28,  75,  28)
-PARK_MID     = (42,  100, 42)
-PARK_LIGHT   = (68,  130, 52)
-PARK_ACCENT  = (90,  160, 60)
-BUFFER_DARK  = (148, 128, 52)
-BUFFER_MID   = (178, 158, 72)
-FARM_DARK    = (108, 62,  24)
-FARM_MID     = (148, 90,  34)
-FARM_CROP    = (192, 170, 52)
-BROWN        = (90,  58,  28)
-WATER_DEEP   = (38,  128, 196)
-WATER_LIGHT  = (100, 180, 235)
-FENCE_COL    = (130, 82,  38)
-NIGHT_TINT   = (0,   10,  50,  100)
-STAR_COL     = (255, 248, 220)
 
-ACTION_MAP = {
-    0: ("NO ALERT",            "●", (55,  135, 55)),
-    1: ("LOW ALERT",           "▲", (205, 170, 35)),
-    2: ("HIGH ALERT",          "⚠",  (215, 65,  45)),
-    3: ("DEPLOY RANGER",       "★", (150, 35,  35)),
-    4: ("SEND SMS TO FARMERS", "✉",  (45,  105, 195)),
-    5: ("ACTIVATE DETERRENT",  "⚡", (185, 105, 25)),
+WIDTH, HEIGHT = 1100, 700
+FPS = 4
+
+PARK_GREEN = (34, 85, 34)
+FARMLAND_TAN = (194, 160, 105)
+BOUNDARY_RED = (220, 50, 47)
+SKY_DAWN = (255, 200, 120)
+SKY_DAY = (135, 206, 235)
+SKY_DUSK = (255, 120, 60)
+SKY_NIGHT = (15, 20, 50)
+
+BUFFALO_BODY = (60, 40, 20)
+BUFFALO_HORN = (200, 180, 100)
+BUFFALO_EYE = (255, 80, 80)
+
+ALERT_COLORS = {
+    0: (80, 80, 80),
+    1: (30, 144, 255),
+    2: (255, 165, 0),
+    3: (148, 0, 211),
+    4: (255, 215, 0),
+    5: (220, 20, 60),
 }
 
+ALERT_LABELS = [
+    "NO ALERT",
+    "COMMUNITY SMS",
+    "RANGER DISPATCH",
+    "SCARE DEVICE",
+    "ELEVATED WATCH",
+    "EMERGENCY BROADCAST",
+]
 
-# ── Drawing helpers ────────────────────────────────────────────────────────────
-
-def _gradient_rect(surface, top_col, bot_col, rect):
-    """Vertical gradient fill inside a pygame.Rect."""
-    x, y, w, h = rect
-    for i in range(h):
-        t   = i / max(h - 1, 1)
-        col = tuple(int(top_col[c] + (bot_col[c] - top_col[c]) * t) for c in range(3))
-        pygame.draw.line(surface, col, (x, y + i), (x + w, y + i))
-
-
-def _draw_sky(surface, width, height):
-    ground_y = int(height * 0.08)
-    _gradient_rect(surface, SKY_TOP, SKY_BOT, (0, 0, width, ground_y))
-
-
-def _draw_stars(surface, width, height, seed=42):
-    """Faint stars in the sky strip — visible at night."""
-    rng = random.Random(seed)
-    ground_y = int(height * 0.08)
-    for _ in range(60):
-        sx = rng.randint(0, width)
-        sy = rng.randint(0, ground_y - 2)
-        pygame.draw.circle(surface, STAR_COL, (sx, sy), 1)
+FEATURE_NAMES = [
+    "Boundary Proximity",
+    "Speed",
+    "Heading Change",
+    "Displacement X",
+    "Displacement Y",
+    "Time of Day",
+    "Vegetation Density",
+    "Herd Cohesion",
+    "Crossing History",
+]
 
 
-def _draw_trees(surface, x_start, x_end, height, seed=7):
-    rng = random.Random(seed)
-    ground_y = int(height * 0.08)
-    for _ in range(22):
-        tx       = rng.randint(x_start + 12, x_end - 12)
-        ty       = rng.randint(int(height * 0.18), int(height * 0.80))
-        trunk_h  = rng.randint(20, 38)
-        canopy_r = rng.randint(14, 26)
-        # trunk
-        pygame.draw.rect(surface, BROWN,
-                         pygame.Rect(tx - 4, ty, 8, trunk_h), border_radius=2)
-        # canopy layers
-        shade = rng.randint(0, 22)
-        col   = (
-            max(0,   PARK_DARK[0] - shade),
-            min(255, PARK_DARK[1] + shade),
-            max(0,   PARK_DARK[2] - shade),
-        )
-        pygame.draw.circle(surface, col,        (tx, ty),              canopy_r)
-        pygame.draw.circle(surface, PARK_ACCENT,(tx - 3, ty - 4),      canopy_r - 4)
-        pygame.draw.circle(surface, PARK_DARK,  (tx, ty),              canopy_r, 2)
+def _lerp_color(c1, c2, t):
+    return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
 
 
-def _draw_crops(surface, x_start, x_end, height):
-    row_spacing = 20
-    crop_stalk  = (130, 110, 28)
-    crop_head   = (192, 170, 52)
-    ground_y    = int(height * 0.10)
-    for row_y in range(ground_y, int(height * 0.86), row_spacing):
-        pygame.draw.line(surface, FARM_DARK, (x_start, row_y), (x_end, row_y), 1)
-        for cx in range(x_start + 6, x_end - 4, 13):
-            pygame.draw.line(surface, crop_stalk, (cx, row_y), (cx, row_y - 11), 2)
-            pygame.draw.circle(surface, crop_head, (cx, row_y - 13), 4)
+def _get_sky_color(time_norm):
+    t = (time_norm + 1) / 2.0
+    if t < 0.25:
+        return _lerp_color(SKY_NIGHT, SKY_DAWN, t / 0.25)
+    elif t < 0.5:
+        return _lerp_color(SKY_DAWN, SKY_DAY, (t - 0.25) / 0.25)
+    elif t < 0.75:
+        return _lerp_color(SKY_DAY, SKY_DUSK, (t - 0.5) / 0.25)
+    else:
+        return _lerp_color(SKY_DUSK, SKY_NIGHT, (t - 0.75) / 0.25)
 
 
-def _draw_fence(surface, x, height):
-    pygame.draw.line(surface, FENCE_COL, (x, 8), (x, height - 8), 3)
-    for py in range(8, height - 8, 28):
-        pygame.draw.rect(surface, FENCE_COL,
-                         pygame.Rect(x - 5, py, 10, 16), border_radius=3)
-        pygame.draw.rect(surface, (160, 110, 60),
-                         pygame.Rect(x - 5, py, 10, 16), 1, border_radius=3)
+class UlinziRenderer:
+    def __init__(self, surface: Optional[pygame.Surface] = None):
+        if not pygame.get_init():
+            pygame.init()
 
+        if surface is not None:
+            self.screen = surface
+            self._owns_display = False
+        else:
+            self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+            pygame.display.set_caption("ULINZI — Wildlife Alert System | Volcanoes National Park, Rwanda")
+            self._owns_display = True
 
-def _draw_water_hole(surface, x, y, radius=24):
-    glow = pygame.Surface((radius * 4, radius * 3), pygame.SRCALPHA)
-    pygame.draw.ellipse(glow, (*WATER_LIGHT, 40),
-                        pygame.Rect(0, 0, radius * 4, radius * 3))
-    surface.blit(glow, (x - radius * 2, y - radius))
-
-    pygame.draw.ellipse(surface, WATER_DEEP,
-                        pygame.Rect(x - radius, y - radius // 2, radius * 2, radius))
-    pygame.draw.ellipse(surface, WATER_LIGHT,
-                        pygame.Rect(x - radius, y - radius // 2, radius * 2, radius), 2)
-    # highlight
-    pygame.draw.line(surface, (200, 235, 255),
-                     (x - radius // 3, y - 4), (x + radius // 3, y - 4), 2)
-
-
-def _draw_buffalo(surface, x, y, size=30, direction=1, leg_phase=0.0):
-    s = size
-
-    sh = pygame.Surface((s * 3, s // 2), pygame.SRCALPHA)
-    pygame.draw.ellipse(sh, (0, 0, 0, 50), sh.get_rect())
-    surface.blit(sh, (x - s * 3 // 2, y + int(s * 0.65)))
-
-    # Legs
-    leg_w      = max(4, int(s * 0.20))
-    leg_h      = int(s * 0.58)
-    leg_cols   = [(38, 28, 16), (50, 38, 22), (38, 28, 16), (50, 38, 22)]
-    leg_x_offs = [-int(s * 0.62), -int(s * 0.20), int(s * 0.20), int(s * 0.62)]
-    for i, ox in enumerate(leg_x_offs):
-        swing = int(math.sin(leg_phase + i * math.pi * 0.5) * s * 0.16)
-        lx    = x + ox - leg_w // 2
-        ly    = y + int(s * 0.44) + swing
-        pygame.draw.rect(surface, leg_cols[i],
-                         pygame.Rect(lx, ly, leg_w, leg_h), border_radius=3)
-        pygame.draw.rect(surface, (18, 12, 6),
-                         pygame.Rect(lx, ly + leg_h - 5, leg_w, 6), border_radius=2)
-    bw, bh = s * 2, int(s * 1.12)
-    pygame.draw.ellipse(surface, (42, 32, 20),
-                        pygame.Rect(x - bw // 2, y - bh // 2, bw, bh))
-    pygame.draw.ellipse(surface, (58, 44, 26),
-                        pygame.Rect(x - bw // 2 + 4, y - bh // 2 + 4,
-                                    bw - 8, bh - 8))
-    pygame.draw.ellipse(surface, (22, 16, 10),
-                        pygame.Rect(x - bw // 2, y - bh // 2, bw, bh), 2)
-
-    # Shoulder hump
-    hump_x = x - direction * int(s * 0.18)
-    pygame.draw.ellipse(surface, (52, 40, 24),
-                        pygame.Rect(hump_x - int(s * 0.52), y - int(s * 0.92),
-                                    int(s * 1.04), int(s * 0.72)))
-
-    # Head
-    hx      = x + direction * int(s * 0.98)
-    hy      = y - int(s * 0.16)
-    head_w  = int(s * 0.88)
-    head_h  = int(s * 0.76)
-    pygame.draw.ellipse(surface, (52, 40, 26),
-                        pygame.Rect(hx - head_w // 2, hy - head_h // 2, head_w, head_h))
-    pygame.draw.ellipse(surface, (22, 16, 10),
-                        pygame.Rect(hx - head_w // 2, hy - head_h // 2, head_w, head_h), 2)
-
-    sx = hx + direction * int(s * 0.40)
-    sy = hy + int(s * 0.14)
-    pygame.draw.ellipse(surface, (68, 52, 36),
-                        pygame.Rect(sx - int(s * 0.24), sy - int(s * 0.16),
-                                    int(s * 0.46), int(s * 0.32)))
-    for side in (-1, 1):
-        pygame.draw.circle(surface, (18, 12, 6),
-                           (sx + side * int(s * 0.09), sy + int(s * 0.06)),
-                           max(2, int(s * 0.07)))
-
-    
-    hbx = hx + direction * int(s * 0.06)
-    hby = hy - int(s * 0.34)
-    for side in (-1, 1):
-        pts = [
-            (hbx + side * int(s * 0.16), hby),
-            (hbx + side * int(s * 0.44), hby - int(s * 0.60)),
-            (hbx + side * int(s * 0.60), hby - int(s * 0.38)),
-            (hbx + side * int(s * 0.38), hby - int(s * 0.10)),
-        ]
-        pygame.draw.polygon(surface, (26, 16, 6),  pts)
-        pygame.draw.polygon(surface, (14,  9, 4),  pts, 1)
-
-   
-    ex = hx + direction * int(s * 0.24)
-    ey = hy - int(s * 0.08)
-    pygame.draw.circle(surface, (215, 195, 155), (ex, ey), max(3, int(s * 0.12)))
-    pygame.draw.circle(surface, (8,    6,    4), (ex, ey), max(2, int(s * 0.07)))
-    pygame.draw.circle(surface, (255, 255, 255), (ex + 1, ey - 1), max(1, int(s * 0.03)))
-
-  
-    tx = x - direction * int(s * 0.98)
-    ty = y - int(s * 0.08)
-    tail_pts = [
-        (tx, ty),
-        (tx - direction * int(s * 0.26), ty - int(s * 0.36)),
-        (tx - direction * int(s * 0.16), ty - int(s * 0.54)),
-    ]
-    pygame.draw.lines(surface, (32, 24, 14), False, tail_pts, 3)
-    pygame.draw.circle(surface, (18, 12, 6),
-                       (tx - direction * int(s * 0.16), ty - int(s * 0.58)), 4)
-
-
-
-class Renderer:
-
-    def __init__(self, width: int = 1060, height: int = 640):
-        pygame.init()
-        self.W = width
-        self.H = height
-        self.screen = pygame.display.set_mode((width, height))
-        pygame.display.set_caption("ULINZI  ·  Wildlife Conflict Early Warning")
         self.clock = pygame.time.Clock()
+        self._load_fonts()
 
-        self.park_end   = 310
-        self.buffer_end = 670
-        self.MAX_DIST   = 10_000.0
-        self.fnt_tiny   = pygame.font.SysFont("consolas",  13)
-        self.fnt_small  = pygame.font.SysFont("consolas",  15)
-        self.fnt_label  = pygame.font.SysFont("arial",     14, bold=True)
-        self.fnt_medium = pygame.font.SysFont("arial",     20, bold=True)
-        self.fnt_large  = pygame.font.SysFont("arial",     27, bold=True)
-        self.fnt_title  = pygame.font.SysFont("arial",     13, bold=True)
+        self.buffalo_x = 260
+        self.buffalo_y = HEIGHT // 2
+        self.trail: List[tuple] = []
+        self.reward_particles: List[dict] = []
+        self.alert_flash = 0
+        self.last_action = 0
+        self.step_count = 0
+        self.total_reward = 0.0
 
-        self.is_open        = True
-        self._leg_phase     = 0.0
-        self._last_distance = self.MAX_DIST
-        self._star_surf     = None   # cached star layer
+    def _load_fonts(self):
+        try:
+            self.font_title = pygame.font.SysFont("dejavusans", 22, bold=True)
+            self.font_label = pygame.font.SysFont("dejavusans", 14)
+            self.font_small = pygame.font.SysFont("dejavusans", 12)
+            self.font_alert = pygame.font.SysFont("dejavusans", 18, bold=True)
+            self.font_stat = pygame.font.SysFont("dejavumono", 13)
+        except Exception:
+            self.font_title = pygame.font.Font(None, 26)
+            self.font_label = pygame.font.Font(None, 18)
+            self.font_small = pygame.font.Font(None, 15)
+            self.font_alert = pygame.font.Font(None, 22)
+            self.font_stat = pygame.font.Font(None, 16)
 
-        self._bg      = self._build_background()
-        self._star_surf = self._build_stars()
+    def reset(self, obs: np.ndarray):
+        self.buffalo_x = 260
+        self.buffalo_y = HEIGHT // 2
+        self.trail = []
+        self.reward_particles = []
+        self.alert_flash = 0
+        self.step_count = 0
+        self.total_reward = 0.0
 
-    def _build_background(self) -> pygame.Surface:
-        bg       = pygame.Surface((self.W, self.H))
-        ground_y = int(self.H * 0.08)
+    def _draw_background(self, time_norm: float, boundary_proximity: float):
+        sky = _get_sky_color(time_norm)
+        self.screen.fill(sky, rect=(0, 0, WIDTH, 160))
 
-        # Sky gradient
-        _gradient_rect(bg, SKY_TOP, SKY_BOT, (0, 0, self.W, ground_y + 4))
+        park_rect = pygame.Rect(0, 160, 520, HEIGHT - 160)
+        pygame.draw.rect(self.screen, PARK_GREEN, park_rect)
 
-        _gradient_rect(bg, PARK_MID,   PARK_DARK,
-                       (0, ground_y, self.park_end, self.H - ground_y))
-        _gradient_rect(bg, BUFFER_MID, BUFFER_DARK,
-                       (self.park_end, ground_y,
-                        self.buffer_end - self.park_end, self.H - ground_y))
-        _gradient_rect(bg, FARM_MID,   FARM_DARK,
-                       (self.buffer_end, ground_y,
-                        self.W - self.buffer_end, self.H - ground_y))
+        for _ in range(40):
+            rng = np.random.default_rng(abs(hash(str(boundary_proximity * 100))) % (2**32))
+            gx = int(rng.uniform(10, 510))
+            gy = int(rng.uniform(180, HEIGHT - 20))
+            gr = int(rng.uniform(6, 22))
+            col = _lerp_color((20, 70, 20), (50, 110, 50), rng.random())
+            pygame.gfxdraw.filled_ellipse(self.screen, gx, gy, gr, int(gr * 0.6), col)
 
-        for i in range(0, self.park_end, 38):
-            pygame.draw.rect(bg, PARK_LIGHT,
-                             pygame.Rect(i, ground_y, 18, self.H - ground_y))
-        for i in range(self.park_end, self.buffer_end, 34):
-            pygame.draw.rect(bg, BUFFER_DARK,
-                             pygame.Rect(i, ground_y, 13, self.H - ground_y))
-        for i in range(self.buffer_end, self.W, 26):
-            pygame.draw.rect(bg, FARM_DARK,
-                             pygame.Rect(i, ground_y, 12, self.H - ground_y))
+        farm_rect = pygame.Rect(520, 160, WIDTH - 520, HEIGHT - 160)
+        pygame.draw.rect(self.screen, FARMLAND_TAN, farm_rect)
 
-        # Horizon line
-        pygame.draw.line(bg, (80, 60, 30),
-                         (0, ground_y), (self.W, ground_y), 2)
+        row_color = _lerp_color(FARMLAND_TAN, (160, 120, 60), 0.3)
+        for ry in range(180, HEIGHT, 28):
+            pygame.draw.line(self.screen, row_color, (520, ry), (WIDTH - 220, ry), 2)
 
-        _draw_trees(bg, 0, self.park_end, self.H, seed=7)
-        _draw_crops(bg, self.buffer_end + 10, self.W - 5, self.H)
-        _draw_water_hole(bg, int(self.park_end * 0.36), int(self.H * 0.66))
-        _draw_fence(bg, self.park_end, self.H)
+        hut_positions = [(680, 320), (740, 420), (790, 280), (650, 500)]
+        for hx, hy in hut_positions:
+            pygame.draw.circle(self.screen, (180, 140, 80), (hx, hy), 14)
+            roof_pts = [(hx, hy - 22), (hx - 18, hy - 2), (hx + 18, hy - 2)]
+            pygame.draw.polygon(self.screen, (139, 69, 19), roof_pts)
 
-        
-        _draw_fence(bg, self.buffer_end, self.H)
+    def _draw_boundary(self, boundary_proximity: float):
+        pulse = abs(math.sin(pygame.time.get_ticks() * 0.003))
+        alpha = int(120 + 135 * boundary_proximity * pulse)
+        alpha = min(255, alpha)
+        bx = 520
+        color = _lerp_color((200, 200, 50), BOUNDARY_RED, boundary_proximity)
+        for i in range(3):
+            lw = 3 - i
+            pygame.draw.line(self.screen, (*color, max(0, alpha - i * 40)), (bx, 160), (bx, HEIGHT), lw)
 
-        # Zone labels
-        for text, cx, col in [
-            ("NATIONAL PARK",
-             self.park_end // 2,                              PARK_LIGHT),
-            ("BUFFER ZONE",
-             (self.park_end + self.buffer_end) // 2,          (225, 205, 105)),
-            ("FARMLAND",
-             (self.buffer_end + self.W) // 2,                 FARM_CROP),
-        ]:
-            surf = self.fnt_title.render(text, True, col)
-            bg.blit(surf, (cx - surf.get_width() // 2, 14))
+        label = self.font_small.render("PARK BOUNDARY", True, BOUNDARY_RED)
+        self.screen.blit(label, (bx - label.get_width() // 2, 165))
 
-        return bg
+        pygame.draw.rect(self.screen, (40, 60, 40), (0, 155, 520, 10))
+        pygame.draw.rect(self.screen, FARMLAND_TAN, (520, 155, WIDTH - 520, 10))
 
-    def _build_stars(self) -> pygame.Surface:
-        surf = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
-        _draw_stars(surf, self.W, self.H, seed=99)
-        return surf
+        park_lbl = self.font_small.render("VOLCANOES NATIONAL PARK", True, (220, 255, 220))
+        self.screen.blit(park_lbl, (20, 168))
+        farm_lbl = self.font_small.render("KINIGI FARMLAND — MUSANZE DISTRICT", True, (80, 50, 10))
+        self.screen.blit(farm_lbl, (530, 168))
 
-    def draw(self, state, step: int, action: int = None) -> None:
-        if not self.is_open:
+    def _compute_buffalo_position(self, obs: np.ndarray) -> tuple:
+        bp = float(obs[0])
+        dx = float(obs[3])
+        dy = float(obs[4])
+        target_x = int(40 + bp * 460)
+        target_y = int(HEIGHT // 2 + dy * 120)
+        target_y = max(190, min(HEIGHT - 40, target_y))
+        self.buffalo_x = int(self.buffalo_x * 0.7 + target_x * 0.3)
+        self.buffalo_y = int(self.buffalo_y * 0.7 + target_y * 0.3)
+        return self.buffalo_x, self.buffalo_y
+
+    def _draw_trail(self):
+        if len(self.trail) < 2:
             return
+        for i in range(1, len(self.trail)):
+            alpha = int(255 * i / len(self.trail))
+            col = _lerp_color((20, 20, 20), BUFFALO_BODY, i / len(self.trail))
+            pygame.draw.line(self.screen, col, self.trail[i - 1], self.trail[i], 2)
 
-        (step_length, speed, turning_angle,
-         distance, ndvi, time_of_day,
-         season, dist_water, conflict_hist) = state
+    def _draw_buffalo(self, bx: int, by: int, speed: float, action: int):
+        body_r = 22
+        pygame.gfxdraw.filled_ellipse(self.screen, bx, by, body_r, int(body_r * 0.65), BUFFALO_BODY)
+        pygame.gfxdraw.filled_ellipse(self.screen, bx + body_r - 6, by - 4, 14, 11, BUFFALO_BODY)
 
+        pygame.draw.line(self.screen, BUFFALO_HORN, (bx + body_r + 4, by - 12), (bx + body_r + 16, by - 22), 3)
+        pygame.draw.line(self.screen, BUFFALO_HORN, (bx + body_r + 4, by - 10), (bx + body_r + 14, by - 5), 3)
+
+        pygame.draw.circle(self.screen, BUFFALO_EYE, (bx + body_r + 4, by - 6), 3)
+        pygame.draw.circle(self.screen, (0, 0, 0), (bx + body_r + 5, by - 6), 1)
+
+        if action > 0:
+            alert_col = ALERT_COLORS[action]
+            t = (pygame.time.get_ticks() % 1000) / 1000.0
+            ring_r = int(body_r + 10 + 15 * t)
+            ring_alpha = int(200 * (1 - t))
+            pygame.gfxdraw.circle(self.screen, bx, by, ring_r, (*alert_col, ring_alpha))
+
+        if speed > 0.5:
+            for i in range(3):
+                mx = bx - 30 - i * 12
+                my = by + np.random.randint(-4, 5)
+                pygame.draw.circle(self.screen, (150, 110, 60), (mx, my), 3)
+
+    def _draw_herd(self, bx: int, by: int, cohesion: float):
+        count = int(3 + cohesion * 5)
+        rng = np.random.default_rng(42)
+        spread = int(80 * (1 - cohesion) + 20)
+        for i in range(count):
+            ox = int(rng.uniform(-spread, spread))
+            oy = int(rng.uniform(-spread // 2, spread // 2))
+            hx, hy = bx + ox, by + oy
+            if 0 < hx < 510 and 190 < hy < HEIGHT - 10:
+                pygame.gfxdraw.filled_ellipse(self.screen, hx, hy, 12, 8, _lerp_color(BUFFALO_BODY, (80, 60, 30), 0.4))
+
+    def _draw_risk_meter(self, risk: float):
+        mx, my, mw, mh = 30, 30, 200, 22
+        pygame.draw.rect(self.screen, (30, 30, 30), (mx, my, mw, mh), border_radius=4)
+        bar_color = _lerp_color((50, 200, 50), BOUNDARY_RED, risk)
+        bar_w = int(mw * risk)
+        if bar_w > 0:
+            pygame.draw.rect(self.screen, bar_color, (mx, my, bar_w, mh), border_radius=4)
+        pygame.draw.rect(self.screen, (200, 200, 200), (mx, my, mw, mh), 1, border_radius=4)
+        lbl = self.font_small.render(f"RISK  {risk:.2f}", True, (240, 240, 240))
+        self.screen.blit(lbl, (mx + 4, my + 4))
+
+    def _draw_alert_panel(self, action: int, reward: float):
+        px, py, pw, ph = WIDTH - 210, 10, 200, HEIGHT - 20
+        panel_surf = pygame.Surface((pw, ph), pygame.SRCALPHA)
+        panel_surf.fill((10, 10, 20, 210))
+        self.screen.blit(panel_surf, (px, py))
+        pygame.draw.rect(self.screen, (80, 80, 120), (px, py, pw, ph), 1)
+
+        title = self.font_title.render("ULINZI", True, (255, 200, 50))
+        self.screen.blit(title, (px + pw // 2 - title.get_width() // 2, py + 8))
+        sub = self.font_small.render("Wildlife Alert System", True, (180, 180, 200))
+        self.screen.blit(sub, (px + pw // 2 - sub.get_width() // 2, py + 32))
+
+        pygame.draw.line(self.screen, (80, 80, 120), (px + 10, py + 50), (px + pw - 10, py + 50))
+
+        al_title = self.font_label.render("ACTIVE ALERT", True, (180, 180, 200))
+        self.screen.blit(al_title, (px + 10, py + 58))
+
+        ac = ALERT_COLORS[action]
+        pygame.draw.rect(self.screen, ac, (px + 10, py + 76, pw - 20, 36), border_radius=6)
+        al_lbl = self.font_alert.render(ALERT_LABELS[action], True, (255, 255, 255))
+        self.screen.blit(al_lbl, (px + pw // 2 - al_lbl.get_width() // 2, py + 84))
+
+        pygame.draw.line(self.screen, (80, 80, 120), (px + 10, py + 120), (px + pw - 10, py + 120))
+
+        rw_title = self.font_label.render("STEP REWARD", True, (180, 180, 200))
+        self.screen.blit(rw_title, (px + 10, py + 128))
+        rw_col = (80, 220, 80) if reward >= 0 else (220, 80, 80)
+        rw_val = self.font_title.render(f"{reward:+.1f}", True, rw_col)
+        self.screen.blit(rw_val, (px + 10, py + 146))
+
+        cum_lbl = self.font_label.render("CUMULATIVE", True, (180, 180, 200))
+        self.screen.blit(cum_lbl, (px + 10, py + 172))
+        cum_col = (80, 220, 80) if self.total_reward >= 0 else (220, 80, 80)
+        cum_val = self.font_title.render(f"{self.total_reward:+.1f}", True, cum_col)
+        self.screen.blit(cum_val, (px + 10, py + 190))
+
+        pygame.draw.line(self.screen, (80, 80, 120), (px + 10, py + 218), (px + pw - 10, py + 218))
+
+        step_lbl = self.font_label.render(f"Step: {self.step_count} / 48", True, (180, 180, 200))
+        self.screen.blit(step_lbl, (px + 10, py + 226))
+
+    def _draw_obs_panel(self, obs: np.ndarray):
+        px, py, pw = 10, HEIGHT - 185, 500
+        panel_surf = pygame.Surface((pw, 178), pygame.SRCALPHA)
+        panel_surf.fill((10, 10, 20, 200))
+        self.screen.blit(panel_surf, (px, py))
+        pygame.draw.rect(self.screen, (80, 80, 120), (px, py, pw, 178), 1)
+
+        title = self.font_label.render("OBSERVATION VECTOR  (30-min GPS collar snapshot)", True, (200, 200, 255))
+        self.screen.blit(title, (px + 8, py + 6))
+
+        for i, (name, val) in enumerate(zip(FEATURE_NAMES, obs)):
+            row_y = py + 26 + i * 17
+            name_surf = self.font_stat.render(f"{name:<22}", True, (160, 200, 160))
+            self.screen.blit(name_surf, (px + 8, row_y))
+
+            bar_x = px + 195
+            bar_w = 200
+            bar_h = 10
+            pygame.draw.rect(self.screen, (40, 40, 60), (bar_x, row_y + 2, bar_w, bar_h))
+            norm_val = np.clip((float(val) + 1) / 2.0, 0, 1)
+            bar_fill = int(bar_w * norm_val)
+            if bar_fill > 0:
+                col = _lerp_color((50, 180, 255), (255, 80, 80), norm_val)
+                pygame.draw.rect(self.screen, col, (bar_x, row_y + 2, bar_fill, bar_h))
+
+            val_surf = self.font_stat.render(f"{val:+.3f}", True, (220, 220, 150))
+            self.screen.blit(val_surf, (bar_x + bar_w + 8, row_y))
+
+    def _draw_alert_legend(self):
+        lx, ly = 530, HEIGHT - 108
+        lbl = self.font_small.render("ALERT LEVELS", True, (200, 200, 200))
+        self.screen.blit(lbl, (lx, ly))
+        for i, (label, color) in enumerate(zip(ALERT_LABELS, ALERT_COLORS.values())):
+            ry = ly + 16 + i * 16
+            pygame.draw.rect(self.screen, color, (lx, ry, 12, 12), border_radius=2)
+            txt = self.font_small.render(label, True, (200, 200, 200))
+            self.screen.blit(txt, (lx + 16, ry))
+
+    def draw_frame(self, obs: np.ndarray, action: int, reward: float, info: Dict[str, Any]):
+        time_norm = float(obs[5]) if len(obs) > 5 else 0.0
+        bp = float(obs[0])
+        speed = float(obs[1])
+        cohesion = float(obs[7]) if len(obs) > 7 else 0.5
+        risk = float(info.get("risk_score", 0.5 * bp + 0.3 * speed))
+
+        self._draw_background(time_norm, bp)
+        self._draw_boundary(bp)
+
+        bx, by = self._compute_buffalo_position(obs)
+        self.trail.append((bx, by))
+        if len(self.trail) > 30:
+            self.trail.pop(0)
+
+        self._draw_trail()
+        self._draw_herd(bx, by, cohesion)
+        self._draw_buffalo(bx, by, speed, action)
+        self._draw_risk_meter(risk)
+        self._draw_obs_panel(obs)
+        self._draw_alert_legend()
+        self._draw_alert_panel(action, reward)
+
+    def render(self, obs: np.ndarray, action: int, reward: float, info: Dict[str, Any]):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.close()
                 sys.exit()
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                self.close()
+                sys.exit()
 
-        # Leg animation
-        moved = self._last_distance - distance
-        if moved > 0:
-            self._leg_phase += moved * 0.020
-        self._last_distance = distance
+        self.last_action = action
+        self.total_reward += reward
+        self.step_count += 1
 
-        self.screen.blit(self._bg, (0, 0))
+        self.draw_frame(obs, action, reward, info)
 
-        is_night = (time_of_day >= 18) or (time_of_day <= 6)
-
-        if is_night:
-            # Stars appear
-            self.screen.blit(self._star_surf, (0, 0))
-            # Night tint overlay
-            night = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
-            night.fill(NIGHT_TINT)
-            self.screen.blit(night, (0, 0))
-
-        ratio = 1.0 - (distance / self.MAX_DIST)
-        ratio = max(0.0, min(1.0, ratio))
-        x_pos = int(ratio * self.W)
-        x_pos = max(46, min(self.W - 46, x_pos))
-        y_pos = int(self.H * 0.52)
-
-        direction = 1 if x_pos < self.buffer_end else -1
-
-        if distance <= 1200:
-            pulse = abs(math.sin(pygame.time.get_ticks() * 0.004)) * 0.5 + 0.5
-            if distance <= 200:
-                ring_col = (255, 60, 20)
-                rings    = 3
-            elif distance <= 1000:
-                ring_col = (255, 190, 0)
-                rings    = 2
-            else:
-                ring_col = (255, 230, 80)
-                rings    = 1
-
-            for r in range(rings):
-                radius  = 52 + r * 20 + int(pulse * 8)
-                alpha   = int(200 - r * 50)
-                ring_s  = pygame.Surface((radius * 2 + 4, radius * 2 + 4),
-                                         pygame.SRCALPHA)
-                pygame.draw.circle(ring_s, (*ring_col, alpha),
-                                   (radius + 2, radius + 2), radius, 3)
-                self.screen.blit(ring_s,
-                                 (x_pos - radius - 2, y_pos - radius - 2))
-
-        _draw_buffalo(self.screen, x_pos, y_pos,
-                      size=30, direction=direction,
-                      leg_phase=self._leg_phase)
-
-        self._draw_hud(distance, dist_water, speed, ndvi,
-                       time_of_day, season, conflict_hist,
-                       step, is_night, turning_angle, step_length)
-
-        self._draw_distance_bar(ratio)
-
-        if action is not None:
-            self._draw_action_banner(action)
-
-        pygame.display.flip()
-        self.clock.tick(10)
-
-    def _draw_hud(self, dist_farm, dist_water, speed, ndvi,
-                  time_of_day, season, conflict_hist,
-                  step, is_night, turning_angle, step_length):
-
-        PW, PH = 262, 222
-        PX, PY = 8, int(self.H * 0.08) + 6
-
-        # Panel background — dark glass
-        panel = pygame.Surface((PW, PH), pygame.SRCALPHA)
-        panel.fill((8, 14, 10, 175))
-        pygame.draw.rect(panel, (80, 160, 80, 120),
-                         pygame.Rect(0, 0, PW, PH), 1, border_radius=6)
-        self.screen.blit(panel, (PX, PY))
-
-        # Title bar
-        title_bg = pygame.Surface((PW, 22), pygame.SRCALPHA)
-        title_bg.fill((30, 80, 30, 200))
-        self.screen.blit(title_bg, (PX, PY))
-        t = self.fnt_label.render("ULINZI  ·  LIVE TELEMETRY", True, (140, 220, 140))
-        self.screen.blit(t, (PX + PW // 2 - t.get_width() // 2, PY + 4))
-
-        season_str = "DRY  " if season == 1 else "WET  "
-        night_str  = "NIGHT " if is_night else "DAY "
-        hour       = int(time_of_day)
-        minute     = int((time_of_day % 1) * 60)
-
-        # Colour-code distance
-        if dist_farm <= 200:
-            dist_col = (255, 80,  60)
-        elif dist_farm <= 1000:
-            dist_col = (255, 200, 40)
-        elif dist_farm <= 3000:
-            dist_col = (200, 220, 80)
-        else:
-            dist_col = (140, 220, 140)
-
-        rows = [
-            ("STEP",      f"{step:03d}",                    (160, 220, 160)),
-            ("DIST FARM", f"{dist_farm:7.1f} m",            dist_col),
-            ("DIST WATER",f"{dist_water:7.1f} m",           (100, 180, 230)),
-            ("SPEED",     f"{speed:.2f} m/s",               (160, 220, 160)),
-            ("NDVI",      f"{ndvi:.3f}",                    (120, 200, 100)),
-            ("TURN ANG",  f"{turning_angle:.1f}°",          (160, 220, 160)),
-            ("SEASON",    season_str,                        (220, 200, 100)),
-            ("TIME",      f"{hour:02d}:{minute:02d}  {night_str}", (160, 220, 200)),
-            ("CONFLICTS", f"{int(conflict_hist):02d}",
-             (255, 80, 60) if conflict_hist > 0 else (140, 220, 140)),
-        ]
-
-        for i, (key, val, col) in enumerate(rows):
-            ky = PY + 28 + i * 21
-            k_surf = self.fnt_tiny.render(f"{key:<10}", True, (100, 150, 100))
-            v_surf = self.fnt_small.render(val,         True, col)
-            self.screen.blit(k_surf, (PX + 8,  ky))
-            self.screen.blit(v_surf, (PX + 118, ky))
-
-    def _draw_distance_bar(self, ratio: float):
-        BAR_H  = 16
-        BAR_W  = self.W - 44
-        BAR_X  = 22
-        BAR_Y  = self.H - 72
-
-        # Track
-        pygame.draw.rect(self.screen, (30, 30, 30),
-                         (BAR_X, BAR_Y, BAR_W, BAR_H), border_radius=8)
-
-        # Zone colour segments
-        park_w   = int(BAR_W * 0.30)
-        buffer_w = int(BAR_W * 0.35)
-        farm_w   = BAR_W - park_w - buffer_w
-
-        pygame.draw.rect(self.screen, (42, 100, 42),
-                         (BAR_X,                     BAR_Y, park_w,   BAR_H))
-        pygame.draw.rect(self.screen, (178, 158, 72),
-                         (BAR_X + park_w,            BAR_Y, buffer_w, BAR_H))
-        pygame.draw.rect(self.screen, (148, 90, 34),
-                         (BAR_X + park_w + buffer_w, BAR_Y, farm_w,   BAR_H))
-
-
-        marker_x = BAR_X + int(ratio * BAR_W)
-        marker_x = max(BAR_X + 6, min(BAR_X + BAR_W - 6, marker_x))
-
-        pygame.draw.polygon(self.screen, (255, 255, 255), [
-            (marker_x,     BAR_Y - 8),
-            (marker_x - 6, BAR_Y - 14),
-            (marker_x + 6, BAR_Y - 14),
-        ])
-        pygame.draw.circle(self.screen, (240, 220, 160),
-                           (marker_x, BAR_Y + BAR_H // 2), 7)
-        pygame.draw.circle(self.screen, (20, 14, 8),
-                           (marker_x, BAR_Y + BAR_H // 2), 7, 2)
-
-        # Border
-        pygame.draw.rect(self.screen, (160, 160, 160),
-                         (BAR_X, BAR_Y, BAR_W, BAR_H), 1, border_radius=8)
-
-        # Label
-        lbl = self.fnt_tiny.render(
-            "◀  PARK          BUFFER ZONE          FARMLAND  ▶",
-            True, (190, 190, 190))
-        self.screen.blit(lbl,
-                         (BAR_X + BAR_W // 2 - lbl.get_width() // 2,
-                          BAR_Y - 18))
-
-
-    def _draw_action_banner(self, action: int):
-        label, icon, colour = ACTION_MAP.get(action, (str(action), "?", (60, 60, 60)))
-
-        BANNER_H = 50
-        banner   = pygame.Surface((self.W, BANNER_H), pygame.SRCALPHA)
-
-        # Gradient banner
-        for i in range(BANNER_H):
-            t   = i / (BANNER_H - 1)
-            col = tuple(int(colour[c] * (1 - t * 0.35)) for c in range(3))
-            pygame.draw.line(banner, (*col, 235),
-                             (0, i), (self.W, i))
-
-        # Top edge highlight
-        pygame.draw.line(banner, (255, 255, 255, 80), (0, 0), (self.W, 0), 2)
-
-        self.screen.blit(banner, (0, self.H - BANNER_H))
-
-        text  = f"  {icon}   AGENT ACTION :  {label}"
-        t_sur = self.fnt_large.render(text, True, (255, 255, 255))
-        # Subtle shadow
-        sh    = self.fnt_large.render(text, True, (0, 0, 0))
-        ty    = self.H - BANNER_H + (BANNER_H - t_sur.get_height()) // 2
-        for dx, dy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
-            self.screen.blit(sh, (18 + dx, ty + dy))
-        self.screen.blit(t_sur, (18, ty))
-
+        if self._owns_display:
+            pygame.display.flip()
+            self.clock.tick(FPS)
 
     def close(self):
-        if self.is_open:
-            self.is_open = False
+        if self._owns_display and pygame.get_init():
             pygame.quit()
 
 
-def demo():
-    """
-    Self-contained demo: simulates a buffalo moving from park to farmland
-    with rule-based actions. No RL model required.
-    """
-    renderer      = Renderer()
-    distance      = 9800.0
-    dist_water    = 3200.0
-    time_of_day   = 6.5
-    conflict_hist = 0
-    step          = 0
+def run_random_demo():
+    import sys
+    sys.path.insert(0, ".")
+    from environment.custom_env import UlinziEnv
 
-    clock = pygame.time.Clock()
+    env = UlinziEnv(render_mode="human", max_steps=48)
+    renderer = UlinziRenderer()
+    env.renderer = renderer
 
-    while renderer.is_open:
-        speed         = 2.8 + math.sin(step * 0.05) * 0.8
-        step_length   = speed * 60.0
-        turning_angle = max(5.0, 90.0 - (1.0 - distance / 9800.0) * 85.0)
-        distance      = max(0.0, distance - speed * 14)
-        dist_water    = max(0.0, dist_water - speed * 2.5)
-        time_of_day   = (time_of_day + 0.05) % 24
-        ndvi          = 0.35 + math.sin(step * 0.02) * 0.10
-        season        = 1   
+    obs, info = env.reset(seed=42)
+    renderer.reset(obs)
 
-        if distance <= 200:
-            conflict_hist = min(10, conflict_hist + 1)
+    print("\n" + "=" * 60)
+    print("  ULINZI — Random Agent Demo (No Model)")
+    print("  Volcanoes National Park, Rwanda")
+    print("=" * 60)
 
-        state = (step_length, speed, turning_angle,
-                 distance, ndvi, time_of_day,
-                 season, dist_water, float(conflict_hist))
+    done = False
+    step = 0
+    while not done:
+        action = env.action_space.sample()
+        obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
 
-        if distance > 5000:
-            action = 0
-        elif distance > 3000:
-            action = 1
-        elif distance > 1500:
-            action = 2
-        elif distance > 800:
-            action = 3
-        elif distance > 300:
-            action = 4
-        else:
-            action = 5
+        renderer.render(obs, action, reward, info)
 
-        renderer.draw(state, step, action)
+        print(
+            f"  Step {step+1:02d} | Action: {info['action_label']:<22} "
+            f"| Risk: {info['risk_score']:.3f} | Reward: {reward:+.2f} "
+            f"| Cumulative: {info['total_reward']:+.2f}"
+        )
         step += 1
-        clock.tick(10)
 
-        if distance <= 0:
-            distance      = 9800.0
-            dist_water    = 3200.0
-            conflict_hist = 0
-            step          = 0
-
-    renderer.close()
+    env.close()
+    print("\n  Demo complete.")
 
 
 if __name__ == "__main__":
-    demo()
+    run_random_demo()

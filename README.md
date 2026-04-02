@@ -134,14 +134,17 @@ An episode ends when the buffalo reaches farmland (conflict, distance 200m or le
 
 ## Results
 
-| Algorithm | Best run | Mean eval reward |
-|---|---|---|
-| REINFORCE | Run 10 | 15.90 |
-| DQN | Run 7 | 38.85 |
-| A2C | Run 2 | 44.55 |
-| PPO | Run 4 | **50.30** |
+| Algorithm  | Best run | Mean eval reward |
+|------------|----------|------------------|
+| REINFORCE  | Run 7    | -124.95          |
+| DQN        | Run 5    | 348.55           |
+| A2C        | Run 2    | 274.28           |
+| PPO        | Run 8    | **311.30**       |
 
-PPO performed best. It learned a clear escalation policy: stay quiet when the buffalo is far, activate the deterrent as it approaches, send SMS to farmers at the boundary. A2C was the most consistent across hyperparameter configurations. REINFORCE struggled with high variance and most runs finished negative.
+DQN achieved the highest mean evaluation reward in its best run, showing strong performance with the right hyperparameters.  
+PPO was more stable across runs and learned a clear escalation policy: stay quiet when the buffalo is far, activate the deterrent in the approach zone, send SMS to farmers in the imminent zone, and deploy rangers at the boundary.  
+A2C was consistent and competitive, while REINFORCE struggled with high variance and most runs finished negative.
+
 
 ---
 
@@ -156,6 +159,7 @@ GET http://localhost:5000/predict
 Example response:
 ```json
 {
+
   "step": 12,
   "action": 5,
   "action_name": "ACTIVATE DETERRENT",
@@ -167,6 +171,7 @@ Example response:
   "conflict_now": false,
   "conflict_imminent": false,
   "conflict_history": 0
+
 }
 ```
 

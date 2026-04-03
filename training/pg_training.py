@@ -40,11 +40,13 @@ class EntropyCallback(BaseCallback):
         if self.locals["dones"][0]:
             self.episode_rewards.append(self._current_reward)
             self._current_reward = 0.0
-        if hasattr(self.model, "policy") and hasattr(self.model.logger, "name_to_value"):
-            ent = self.model.logger.name_to_value.get("train/entropy_loss", None)
-            if ent is not None:
-                self.entropies.append(float(ent))
         return True
+
+    def _on_rollout_end(self) -> None:
+        # Entropy is only available in the logger after a rollout update
+        ent = self.model.logger.name_to_value.get("train/entropy_loss", None)
+        if ent is not None:
+            self.entropies.append(float(abs(ent)))  # SB3 logs entropy_loss as negative
 
 
 TIMESTEPS = 80000
@@ -342,7 +344,11 @@ def plot_convergence(ppo_results, a2c_results, reinforce_results):
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.set_title("Convergence Comparison — Best Run per Algorithm", fontsize=13, fontweight="bold")
 
-    for name, results, color in [("PPO", ppo_results, "blue"), ("A2C", a2c_results, "orange"), ("REINFORCE", reinforce_results, "green")]:
+    for name, results, color in [
+        ("PPO", ppo_results, "blue"),
+        ("A2C", a2c_results, "orange"),
+        ("REINFORCE", reinforce_results, "green"),
+    ]:
         best = max(results, key=lambda r: r["mean_reward"])
         ep_r = best.get("episode_rewards", [])
         if len(ep_r) >= 15:
@@ -363,66 +369,72 @@ def plot_convergence(ppo_results, a2c_results, reinforce_results):
 
 
 def main():
-    print("\n" + "=" * 60)
-    print("  ULINZI — REINFORCE Training (PPO + A2C loaded from disk)")
-    print("=" * 60)
+    print("  ULINZI  Policy Gradient Training (PPO + A2C + REINFORCE)")
 
-    ppo_path = "models/pg/ppo_results_summary.json"
-    a2c_path = "models/pg/a2c_results_summary.json"
-
-    if not os.path.exists(ppo_path) or not os.path.exists(a2c_path):
-        print("\n  ERROR: PPO/A2C result files not found.")
-        print(f"  Expected: {ppo_path}")
-        print(f"  Expected: {a2c_path}")
-        sys.exit(1)
-
-    with open(ppo_path) as f:
-        ppo_results = json.load(f)
-    with open(a2c_path) as f:
-        a2c_results = json.load(f)
-
-    best_ppo_reward = max(r["mean_reward"] for r in ppo_results)
-    best_a2c_reward = max(r["mean_reward"] for r in a2c_results)
+    # PPO
+    print("\n[PPO] Training 10 runs...")
+    ppo_results = []
+    best_ppo_model, best_ppo_reward = None, -np.inf
+    for i, params in enumerate(PPO_RUNS):
+        model, result = train_sb3_run(PPO, "PPO", i, params)
+        ppo_results.append(result)
+        if result["mean_reward"] > best_ppo_reward:
+            best_ppo_reward = result["mean_reward"]
+            best_ppo_model = model
+    best_ppo_model.save("models/pg/ppo_best")
     best_ppo_run = max(ppo_results, key=lambda r: r["mean_reward"])["run"]
+    print(f"\n  PPO  — Best: {best_ppo_reward:.3f} (Run {best_ppo_run})")
+
+    # A2C 
+    print("\n[A2C] Training 10 runs...")
+    a2c_results = []
+    best_a2c_model, best_a2c_reward = None, -np.inf
+    for i, params in enumerate(A2C_RUNS):
+        model, result = train_sb3_run(A2C, "A2C", i, params)
+        a2c_results.append(result)
+        if result["mean_reward"] > best_a2c_reward:
+            best_a2c_reward = result["mean_reward"]
+            best_a2c_model = model
+    best_a2c_model.save("models/pg/a2c_best")
     best_a2c_run = max(a2c_results, key=lambda r: r["mean_reward"])["run"]
+    print(f"\n  A2C  — Best: {best_a2c_reward:.3f} (Run {best_a2c_run})")
 
-    print(f"\n  Loaded PPO  — Best: {best_ppo_reward:.3f} (Run {best_ppo_run})")
-    print(f"  Loaded A2C  — Best: {best_a2c_reward:.3f} (Run {best_a2c_run})")
-
+    # REINFORCE 
     print("\n[REINFORCE] Training 10 runs...")
     reinforce_results = []
-    best_reinforce_model = None
-    best_reinforce_reward = -np.inf
-
+    best_reinforce_model, best_reinforce_reward = None, -np.inf
     for i, params in enumerate(REINFORCE_RUNS):
         model, result = train_reinforce(i, params)
         reinforce_results.append(result)
         if result["mean_reward"] > best_reinforce_reward:
             best_reinforce_reward = result["mean_reward"]
             best_reinforce_model = model
-
     torch.save(best_reinforce_model.state_dict(), "models/pg/reinforce_best.pt")
-    print(f"\n  Best REINFORCE saved — Mean Reward: {best_reinforce_reward:.3f}")
+    reinforce_best_run = max(reinforce_results, key=lambda r: r["mean_reward"])["run"]
+    print(f"\n  REINFORCE — Best: {best_reinforce_reward:.3f} (Run {reinforce_best_run})")
 
+    # Save summaries 
     def clean(results):
         return [{k: v for k, v in r.items() if k not in ("episode_rewards", "entropies")} for r in results]
 
+    with open("models/pg/ppo_results_summary.json", "w") as f:
+        json.dump(clean(ppo_results), f, indent=2)
+    with open("models/pg/a2c_results_summary.json", "w") as f:
+        json.dump(clean(a2c_results), f, indent=2)
     with open("models/pg/reinforce_results_summary.json", "w") as f:
         json.dump(clean(reinforce_results), f, indent=2)
 
+    # ── Plot using in-memory results (full episode_rewards + entropies intact)
     plot_pg_results(ppo_results, a2c_results, reinforce_results)
     plot_convergence(ppo_results, a2c_results, reinforce_results)
 
-    print("\n" + "=" * 60)
     print("  FINAL SUMMARY")
-    print("=" * 60)
-    reinforce_best_run = max(reinforce_results, key=lambda r: r["mean_reward"])["run"]
-    for algo, reward, note in [
-        ("PPO",       best_ppo_reward,       f"Run {best_ppo_run}"),
-        ("A2C",       best_a2c_reward,       f"Run {best_a2c_run}"),
-        ("REINFORCE", best_reinforce_reward, f"Run {reinforce_best_run}"),
+    for algo, reward, run in [
+        ("PPO",       best_ppo_reward,       best_ppo_run),
+        ("A2C",       best_a2c_reward,       best_a2c_run),
+        ("REINFORCE", best_reinforce_reward, reinforce_best_run),
     ]:
-        print(f"  {algo:<12} | {reward:>10.3f} | {note}")
+        print(f"  {algo:<12} | {reward:>10.3f} | Run {run}")
 
 
 if __name__ == "__main__":

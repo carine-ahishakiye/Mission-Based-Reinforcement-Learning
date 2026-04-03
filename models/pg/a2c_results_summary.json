@@ -1,0 +1,122 @@
+[
+  {
+    "run": 1,
+    "mean_reward": 14.3,
+    "std_reward": 19.31,
+    "learning_rate": 0.0007,
+    "gamma": 0.99,
+    "n_steps": 5,
+    "ent_coef": 0.01,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 1.0
+  },
+  {
+    "run": 2,
+    "mean_reward": -7.75,
+    "std_reward": 12.949,
+    "learning_rate": 0.001,
+    "gamma": 0.99,
+    "n_steps": 5,
+    "ent_coef": 0.01,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 1.0
+  },
+  {
+    "run": 3,
+    "mean_reward": 17.25,
+    "std_reward": 19.683,
+    "learning_rate": 0.0005,
+    "gamma": 0.95,
+    "n_steps": 10,
+    "ent_coef": 0.02,
+    "vf_coef": 0.25,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 0.9
+  },
+  {
+    "run": 4,
+    "mean_reward": 11.425,
+    "std_reward": 8.701,
+    "learning_rate": 0.0007,
+    "gamma": 0.99,
+    "n_steps": 20,
+    "ent_coef": 0.005,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 0.95
+  },
+  {
+    "run": 5,
+    "mean_reward": 11.65,
+    "std_reward": 15.916,
+    "learning_rate": 0.0002,
+    "gamma": 0.99,
+    "n_steps": 5,
+    "ent_coef": 0.01,
+    "vf_coef": 1.0,
+    "max_grad_norm": 1.0,
+    "gae_lambda": 1.0
+  },
+  {
+    "run": 6,
+    "mean_reward": 7.95,
+    "std_reward": 13.23,
+    "learning_rate": 0.001,
+    "gamma": 0.97,
+    "n_steps": 8,
+    "ent_coef": 0.0,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 0.95
+  },
+  {
+    "run": 7,
+    "mean_reward": 17.0,
+    "std_reward": 15.795,
+    "learning_rate": 0.0007,
+    "gamma": 0.99,
+    "n_steps": 5,
+    "ent_coef": 0.05,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 1.0
+  },
+  {
+    "run": 8,
+    "mean_reward": 10.475,
+    "std_reward": 14.85,
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "n_steps": 16,
+    "ent_coef": 0.01,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 0.97
+  },
+  {
+    "run": 9,
+    "mean_reward": 9.875,
+    "std_reward": 15.4,
+    "learning_rate": 0.0005,
+    "gamma": 0.98,
+    "n_steps": 5,
+    "ent_coef": 0.02,
+    "vf_coef": 0.75,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 1.0
+  },
+  {
+    "run": 10,
+    "mean_reward": 5.05,
+    "std_reward": 8.58,
+    "learning_rate": 0.0007,
+    "gamma": 0.99,
+    "n_steps": 32,
+    "ent_coef": 0.01,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 0.95
+  }
+]

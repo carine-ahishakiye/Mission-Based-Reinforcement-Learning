@@ -1,0 +1,102 @@
+[
+  {
+    "run": 1,
+    "mean_reward": -12.2,
+    "std_reward": 14.497,
+    "learning_rate": 0.001,
+    "gamma": 0.99,
+    "hidden_size": 64,
+    "entropy_coef": 0.01,
+    "baseline": true
+  },
+  {
+    "run": 2,
+    "mean_reward": -10.35,
+    "std_reward": 14.164,
+    "learning_rate": 0.0005,
+    "gamma": 0.99,
+    "hidden_size": 128,
+    "entropy_coef": 0.01,
+    "baseline": true
+  },
+  {
+    "run": 3,
+    "mean_reward": -13.3,
+    "std_reward": 13.357,
+    "learning_rate": 0.001,
+    "gamma": 0.95,
+    "hidden_size": 64,
+    "entropy_coef": 0.0,
+    "baseline": false
+  },
+  {
+    "run": 4,
+    "mean_reward": -8.65,
+    "std_reward": 13.062,
+    "learning_rate": 0.002,
+    "gamma": 0.99,
+    "hidden_size": 64,
+    "entropy_coef": 0.05,
+    "baseline": true
+  },
+  {
+    "run": 5,
+    "mean_reward": -7.75,
+    "std_reward": 11.891,
+    "learning_rate": 0.0005,
+    "gamma": 0.97,
+    "hidden_size": 128,
+    "entropy_coef": 0.02,
+    "baseline": true
+  },
+  {
+    "run": 6,
+    "mean_reward": -15.6,
+    "std_reward": 13.369,
+    "learning_rate": 0.0001,
+    "gamma": 0.99,
+    "hidden_size": 256,
+    "entropy_coef": 0.01,
+    "baseline": true
+  },
+  {
+    "run": 7,
+    "mean_reward": -8.4,
+    "std_reward": 13.245,
+    "learning_rate": 0.001,
+    "gamma": 0.99,
+    "hidden_size": 64,
+    "entropy_coef": 0.1,
+    "baseline": false
+  },
+  {
+    "run": 8,
+    "mean_reward": -8.35,
+    "std_reward": 12.943,
+    "learning_rate": 0.0003,
+    "gamma": 0.98,
+    "hidden_size": 128,
+    "entropy_coef": 0.01,
+    "baseline": true
+  },
+  {
+    "run": 9,
+    "mean_reward": -11.5,
+    "std_reward": 13.757,
+    "learning_rate": 0.002,
+    "gamma": 0.95,
+    "hidden_size": 64,
+    "entropy_coef": 0.0,
+    "baseline": true
+  },
+  {
+    "run": 10,
+    "mean_reward": -9.45,
+    "std_reward": 13.234,
+    "learning_rate": 0.001,
+    "gamma": 0.99,
+    "hidden_size": 64,
+    "entropy_coef": 0.02,
+    "baseline": true
+  }
+]
